@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - Portal de Productos</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo"><a href="/">🛍️ Portal de Productos</a></h1>
+            <div class="nav-links">
+                <span id="userInfo" class="user-info"></span>
+                <a href="/products">📦 Productos</a>
+                <a href="#" id="logoutBtn" class="btn-danger">Cerrar Sesión</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="chat-container">
+            <div class="chat-sidebar">
+                <h3>Usuarios Conectados</h3>
+                <ul id="usersList"></ul>
+            </div>
+            
+            <div class="chat-main">
+                <div class="chat-header">
+                    <h2>💬 Chat en Tiempo Real</h2>
+                </div>
+                
+                <div id="messages" class="chat-messages"></div>
+                
+                <div id="typingIndicator" class="typing-indicator"></div>
+                
+                <form id="chatForm" class="chat-form">
+                    <input 
+                        type="text" 
+                        id="messageInput" 
+                        placeholder="Escribe un mensaje..." 
+                        autocomplete="off"
+                        required
+                    >
+                    <button type="submit" class="btn btn-primary">Enviar</button>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Verificar autenticación
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+        if (!token) {
+            window.location.href = '/login';
+        }
+
+        // Mostrar info del usuario
+        document.getElementById('userInfo').textContent = `👤 ${user.username} (${user.role})`;
+
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', (e) => {
+            e.preventDefault();
+            localStorage.clear();
+            window.location.href = '/login';
+        });
+
+        // Conectar a Socket.IO
+        const socket = io({
+            auth: { token }
+        });
+
+        const messagesDiv = document.getElementById('messages');
+        const chatForm = document.getElementById('chatForm');
+        const messageInput = document.getElementById('messageInput');
+        const typingIndicator = document.getElementById('typingIndicator');
+        const usersList = document.getElementById('usersList');
+
+        let typingTimeout;
+
+        // Usuario conectado
+        socket.on('user-connected', (data) => {
+            addSystemMessage(`${data.username} se ha conectado`);
+            updateUsersList(data.connectedUsers);
+        });
+
+        // Usuario desconectado
+        socket.on('user-disconnected', (data) => {
+            addSystemMessage(`${data.username} se ha desconectado`);
+            updateUsersList(data.connectedUsers);
+        });
+
+        // Recibir mensaje
+        socket.on('chat-message', (data) => {
+            addMessage(data.username, data.message, data.timestamp);
+        });
+
+        // Usuario escribiendo
+        socket.on('user-typing', (username) => {
+            typingIndicator.textContent = `${username} está escribiendo...`;
+        });
+
+        socket.on('user-stop-typing', () => {
+            typingIndicator.textContent = '';
+        });
+
+        // Enviar mensaje
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const message = messageInput.value.trim();
+            
+            if (message) {
+                socket.emit('chat-message', message);
+                messageInput.value = '';
+                socket.emit('stop-typing');
+            }
+        });
+
+        // Detectar cuando el usuario está escribiendo
+        messageInput.addEventListener('input', () => {
+            socket.emit('typing');
+            
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                socket.emit('stop-typing');
+            }, 1000);
+        });
+
+        // Funciones auxiliares
+        function addMessage(username, message, timestamp) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = username === user.username ? 'message message-own' : 'message';
+            
+            const time = new Date(timestamp).toLocaleTimeString('es-ES', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <strong>${username}</strong>
+                    <span class="message-time">${time}</span>
+                </div>
+                <div class="message-content">${escapeHtml(message)}</div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function addSystemMessage(message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message message-system';
+            messageDiv.textContent = message;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateUsersList(users) {
+            usersList.innerHTML = '';
+            users.forEach(username => {
+                const li = document.createElement('li');
+                li.innerHTML = `<span class="user-online">🟢</span> ${username}`;
+                usersList.appendChild(li);
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Manejo de errores de conexión
+        socket.on('connect_error', (error) => {
+            console.error('Error de conexión:', error);
+            alert('Error de autenticación. Por favor, inicia sesión nuevamente.');
+            localStorage.clear();
+            window.location.href = '/login';
+        });
+
+        socket.on('chat-history', (history) => {
+            if (Array.isArray(history)) {
+                messagesDiv.innerHTML = '';
+                history.forEach(msg => {
+                    addMessage(msg.username, msg.message, msg.timestamp);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
