@@ -12,6 +12,24 @@ if (userInfo) {
     userInfo.textContent = `👤 ${user.username} (${user.role})`;
 }
 
+// Mostrar enlaces según el rol
+const userLinks = document.getElementById('userLinks');
+const adminLinks = document.getElementById('adminLinks');
+
+if (user.role === 'user' && userLinks) {
+    userLinks.innerHTML = `
+        <a href="/cart">🛒 Carrito <span id="cartCount" class="cart-badge">0</span></a>
+        <a href="/my-orders">📋 Mis Pedidos</a>
+    `;
+}
+
+if (user.role === 'admin' && adminLinks) {
+    adminLinks.innerHTML = `
+        <a href="/admin/users">👥 Usuarios</a>
+        <a href="/admin/orders">📦 Pedidos</a>
+    `;
+}
+
 // Logout
 const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) {
@@ -72,7 +90,25 @@ if (productForm) {
     productForm.addEventListener('submit', handleProductSubmit);
 }
 
-// Funciones
+// Funciones GraphQL
+async function graphqlRequest(query, variables = {}) {
+    const response = await fetch('/graphql', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ query, variables })
+    });
+
+    const result = await response.json();
+    if (result.errors) {
+        throw new Error(result.errors[0].message);
+    }
+    return result.data;
+}
+
+// Cargar productos
 async function loadProducts() {
     try {
         const response = await fetch('/api/products', {
@@ -99,6 +135,7 @@ async function loadProducts() {
     }
 }
 
+// Mostrar productos
 function displayProducts(products) {
     if (products.length === 0) {
         productsGrid.innerHTML = '<p class="loading">No hay productos disponibles</p>';
@@ -114,6 +151,13 @@ function displayProducts(products) {
                 <p>${product.description}</p>
                 <p class="product-price">${product.price.toFixed(2)} €</p>
                 <p class="product-stock">Stock: ${product.stock} unidades</p>
+                
+                ${user.role === 'user' ? `
+                    <button class="btn btn-primary btn-block" onclick="addToCart('${product._id}', 1)" ${product.stock === 0 ? 'disabled' : ''}>
+                        🛒 Añadir al Carrito
+                    </button>
+                ` : ''}
+                
                 ${user.role === 'admin' ? `
                     <div class="product-actions">
                         <button class="btn btn-secondary" onclick="editProduct('${product._id}')">
@@ -127,6 +171,62 @@ function displayProducts(products) {
             </div>
         </div>
     `).join('');
+}
+
+// Añadir al carrito (GraphQL)
+async function addToCart(productId, quantity) {
+    try {
+        const mutation = `
+            mutation AddToCart($productId: ID!, $quantity: Int!) {
+                addToCart(productId: $productId, quantity: $quantity) {
+                    id
+                    items {
+                        quantity
+                    }
+                }
+            }
+        `;
+
+        const data = await graphqlRequest(mutation, { productId, quantity });
+        const totalItems = data.addToCart.items.reduce((sum, item) => sum + item.quantity, 0);
+        
+        updateCartCount(totalItems);
+        showSuccess('Producto añadido al carrito');
+    } catch (error) {
+        showError('Error al añadir al carrito: ' + error.message);
+    }
+}
+
+// Actualizar contador del carrito
+function updateCartCount(count) {
+    const cartCount = document.getElementById('cartCount');
+    if (cartCount) {
+        cartCount.textContent = count;
+        cartCount.style.display = count > 0 ? 'inline' : 'none';
+    }
+}
+
+// Cargar contador del carrito al iniciar
+async function loadCartCount() {
+    try {
+        const query = `
+            query {
+                myCart {
+                    items {
+                        quantity
+                    }
+                }
+            }
+        `;
+
+        const data = await graphqlRequest(query);
+        if (data.myCart) {
+            const totalItems = data.myCart.items.reduce((sum, item) => sum + item.quantity, 0);
+            updateCartCount(totalItems);
+        }
+    } catch (error) {
+        console.error('Error al cargar contador del carrito:', error);
+    }
 }
 
 function openModal(product = null) {
@@ -191,11 +291,11 @@ async function handleProductSubmit(e) {
         const data = await response.json();
 
         if (response.ok) {
-            showSuccess(data.message);
+            showSuccess(isEditing ? 'Producto actualizado' : 'Producto creado');
             closeModalFunc();
             loadProducts();
         } else {
-            showError(data.message || 'Error al guardar el producto');
+            showError(data.error || 'Error al guardar el producto');
         }
     } catch (error) {
         console.error('Error:', error);
@@ -239,10 +339,10 @@ async function deleteProduct(id) {
         const data = await response.json();
 
         if (response.ok) {
-            showSuccess(data.message);
+            showSuccess('Producto eliminado');
             loadProducts();
         } else {
-            showError(data.message || 'Error al eliminar el producto');
+            showError(data.error || 'Error al eliminar el producto');
         }
     } catch (error) {
         console.error('Error:', error);
@@ -272,4 +372,7 @@ function clearMessages() {
 // Cargar productos al iniciar
 if (productsGrid) {
     loadProducts();
+    if (user.role === 'user') {
+        loadCartCount();
+    }
 }

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Carrito - Portal de Productos</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo"><a href="/">🛍️ Portal de Productos</a></h1>
+            <div class="nav-links">
+                <span id="userInfo" class="user-info"></span>
+                <a href="/products">📦 Productos</a>
+                <a href="/my-orders">📋 Mis Pedidos</a>
+                <a href="/chat">💬 Chat</a>
+                <a href="#" id="logoutBtn" class="btn-danger">Cerrar Sesión</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <h2>🛒 Mi Carrito</h2>
+        
+        <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
+
+        <div id="cartContainer" class="cart-container">
+            <div id="cartItems" class="cart-items">
+                <p class="loading">Cargando carrito...</p>
+            </div>
+
+            <div class="cart-summary">
+                <h3>Resumen del Pedido</h3>
+                <div class="summary-row">
+                    <span>Total:</span>
+                    <span id="cartTotal" class="cart-total">€0.00</span>
+                </div>
+                <button id="checkoutBtn" class="btn btn-primary btn-block" disabled>
+                    Finalizar Compra
+                </button>
+                <button id="clearCartBtn" class="btn btn-secondary btn-block" disabled>
+                    Vaciar Carrito
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+        if (!token) {
+            window.location.href = '/login';
+        }
+
+        document.getElementById('userInfo').textContent = `👤 ${user.username} (${user.role})`;
+
+        document.getElementById('logoutBtn').addEventListener('click', (e) => {
+            e.preventDefault();
+            localStorage.clear();
+            window.location.href = '/login';
+        });
+
+        async function graphqlRequest(query, variables = {}) {
+            const response = await fetch('/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ query, variables })
+            });
+
+            const result = await response.json();
+            if (result.errors) {
+                throw new Error(result.errors[0].message);
+            }
+            return result.data;
+        }
+
+        async function loadCart() {
+            try {
+                const query = `
+                    query {
+                        myCart {
+                            id
+                            items {
+                                product {
+                                    id
+                                    name
+                                    price
+                                    imageUrl
+                                    stock
+                                }
+                                quantity
+                            }
+                        }
+                    }
+                `;
+
+                const data = await graphqlRequest(query);
+                displayCart(data.myCart);
+            } catch (error) {
+                showError('Error al cargar el carrito: ' + error.message);
+                document.getElementById('cartItems').innerHTML = '<p>Error al cargar el carrito</p>';
+            }
+        }
+
+        function displayCart(cart) {
+            const cartItems = document.getElementById('cartItems');
+            const checkoutBtn = document.getElementById('checkoutBtn');
+            const clearCartBtn = document.getElementById('clearCartBtn');
+
+            if (!cart || cart.items.length === 0) {
+                cartItems.innerHTML = '<p class="empty-cart">Tu carrito está vacío</p>';
+                document.getElementById('cartTotal').textContent = '€0.00';
+                checkoutBtn.disabled = true;
+                clearCartBtn.disabled = true;
+                return;
+            }
+
+            let total = 0;
+            let html = '';
+
+            cart.items.forEach(item => {
+                const subtotal = item.product.price * item.quantity;
+                total += subtotal;
+
+                html += `
+                    <div class="cart-item" data-product-id="${item.product.id}">
+                        <img src="${item.product.imageUrl}" alt="${item.product.name}" class="cart-item-image">
+                        <div class="cart-item-details">
+                            <h3>${item.product.name}</h3>
+                            <p class="cart-item-price">€${item.product.price.toFixed(2)}</p>
+                        </div>
+                        <div class="cart-item-quantity">
+                            <button class="btn-quantity" onclick="updateQuantity('${item.product.id}', ${item.quantity - 1})">-</button>
+                            <span>${item.quantity}</span>
+                            <button class="btn-quantity" onclick="updateQuantity('${item.product.id}', ${item.quantity + 1})">+</button>
+                        </div>
+                        <div class="cart-item-subtotal">
+                            <p>€${subtotal.toFixed(2)}</p>
+                        </div>
+                        <button class="btn btn-danger btn-sm" onclick="removeFromCart('${item.product.id}')">
+                            🗑️
+                        </button>
+                    </div>
+                `;
+            });
+
+            cartItems.innerHTML = html;
+            document.getElementById('cartTotal').textContent = `€${total.toFixed(2)}`;
+            checkoutBtn.disabled = false;
+            clearCartBtn.disabled = false;
+        }
+
+        async function updateQuantity(productId, quantity) {
+            if (quantity < 1) {
+                await removeFromCart(productId);
+                return;
+            }
+
+            try {
+                const mutation = `
+                    mutation UpdateCartItem($productId: ID!, $quantity: Int!) {
+                        updateCartItem(productId: $productId, quantity: $quantity) {
+                            id
+                        }
+                    }
+                `;
+
+                await graphqlRequest(mutation, { productId, quantity });
+                await loadCart();
+            } catch (error) {
+                showError('Error al actualizar cantidad: ' + error.message);
+            }
+        }
+
+        async function removeFromCart(productId) {
+            try {
+                const mutation = `
+                    mutation RemoveFromCart($productId: ID!) {
+                        removeFromCart(productId: $productId) {
+                            id
+                        }
+                    }
+                `;
+
+                await graphqlRequest(mutation, { productId });
+                await loadCart();
+                showSuccess('Producto eliminado del carrito');
+            } catch (error) {
+                showError('Error al eliminar producto: ' + error.message);
+            }
+        }
+
+        async function checkout() {
+            if (!confirm('¿Confirmar la compra?')) return;
+
+            try {
+                const mutation = `
+                    mutation {
+                        createOrder {
+                            id
+                            total
+                        }
+                    }
+                `;
+
+                const data = await graphqlRequest(mutation);
+                showSuccess('¡Pedido realizado con éxito! Total: €' + data.createOrder.total.toFixed(2));
+                
+                setTimeout(() => {
+                    window.location.href = '/my-orders';
+                }, 2000);
+            } catch (error) {
+                showError('Error al crear el pedido: ' + error.message);
+            }
+        }
+
+        async function clearCart() {
+            if (!confirm('¿Vaciar todo el carrito?')) return;
+
+            try {
+                const mutation = `
+                    mutation {
+                        clearCart {
+                            id
+                        }
+                    }
+                `;
+
+                await graphqlRequest(mutation);
+                await loadCart();
+                showSuccess('Carrito vaciado');
+            } catch (error) {
+                showError('Error al vaciar el carrito: ' + error.message);
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            setTimeout(() => errorDiv.textContent = '', 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            setTimeout(() => successDiv.textContent = '', 3000);
+        }
+
+        document.getElementById('checkoutBtn').addEventListener('click', checkout);
+        document.getElementById('clearCartBtn').addEventListener('click', clearCart);
+
+        loadCart();
+    </script>
+</body>
+</html>

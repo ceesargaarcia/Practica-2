@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Usuarios - Admin</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo"><a href="/">🛍️ Portal de Productos</a></h1>
+            <div class="nav-links">
+                <span id="userInfo" class="user-info"></span>
+                <a href="/products">📦 Productos</a>
+                <a href="/admin/orders">📋 Pedidos</a>
+                <a href="/chat">💬 Chat</a>
+                <a href="#" id="logoutBtn" class="btn-danger">Cerrar Sesión</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <h2>👥 Gestión de Usuarios</h2>
+        
+        <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
+        
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Email</th>
+                        <th>Rol</th>
+                        <th>Fecha de Registro</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                    <tr>
+                        <td colspan="5" class="loading">Cargando usuarios...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+        if (!token || user.role !== 'admin') {
+            window.location.href = '/products';
+        }
+
+        document.getElementById('userInfo').textContent = `👤 ${user.username} (${user.role})`;
+
+        document.getElementById('logoutBtn').addEventListener('click', (e) => {
+            e.preventDefault();
+            localStorage.clear();
+            window.location.href = '/login';
+        });
+
+        async function graphqlRequest(query, variables = {}) {
+            const response = await fetch('/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ query, variables })
+            });
+
+            const result = await response.json();
+            if (result.errors) {
+                throw new Error(result.errors[0].message);
+            }
+            return result.data;
+        }
+
+        async function loadUsers() {
+            try {
+                const query = `
+                    query {
+                        users {
+                            id
+                            username
+                            email
+                            role
+                            createdAt
+                        }
+                    }
+                `;
+
+                const data = await graphqlRequest(query);
+                displayUsers(data.users);
+            } catch (error) {
+                showError('Error al cargar usuarios: ' + error.message);
+                document.getElementById('usersTableBody').innerHTML = 
+                    '<tr><td colspan="5">Error al cargar usuarios</td></tr>';
+            }
+        }
+
+        function displayUsers(users) {
+            const tbody = document.getElementById('usersTableBody');
+
+            if (!users || users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No hay usuarios</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = users.map(u => {
+                const date = new Date(parseInt(u.createdAt)).toLocaleDateString('es-ES');
+                const isCurrentUser = u.id === user.id;
+
+                return `
+                    <tr>
+                        <td>${u.username}${isCurrentUser ? ' <em>(tú)</em>' : ''}</td>
+                        <td>${u.email}</td>
+                        <td>
+                            <span class="badge ${u.role === 'admin' ? 'badge-success' : 'badge-info'}">
+                                ${u.role}
+                            </span>
+                        </td>
+                        <td>${date}</td>
+                        <td>
+                            ${!isCurrentUser ? `
+                                <button class="btn btn-sm btn-secondary" onclick="toggleRole('${u.id}', '${u.role}')">
+                                    🔄 Cambiar Rol
+                                </button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.username}')">
+                                    🗑️ Eliminar
+                                </button>
+                            ` : '<em>No puedes modificarte a ti mismo</em>'}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function toggleRole(userId, currentRole) {
+            const newRole = currentRole === 'admin' ? 'user' : 'admin';
+            
+            if (!confirm(`¿Cambiar rol a ${newRole}?`)) return;
+
+            try {
+                const mutation = `
+                    mutation UpdateUserRole($id: ID!, $role: String!) {
+                        updateUserRole(id: $id, role: $role) {
+                            id
+                            role
+                        }
+                    }
+                `;
+
+                await graphqlRequest(mutation, { id: userId, role: newRole });
+                showSuccess('Rol actualizado correctamente');
+                loadUsers();
+            } catch (error) {
+                showError('Error al actualizar rol: ' + error.message);
+            }
+        }
+
+        async function deleteUser(userId, username) {
+            if (!confirm(`¿Eliminar al usuario ${username}? Esta acción no se puede deshacer.`)) return;
+
+            try {
+                const mutation = `
+                    mutation DeleteUser($id: ID!) {
+                        deleteUser(id: $id) {
+                            id
+                            username
+                        }
+                    }
+                `;
+
+                await graphqlRequest(mutation, { id: userId });
+                showSuccess('Usuario eliminado correctamente');
+                loadUsers();
+            } catch (error) {
+                showError('Error al eliminar usuario: ' + error.message);
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            setTimeout(() => errorDiv.textContent = '', 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            setTimeout(() => successDiv.textContent = '', 3000);
+        }
+
+        loadUsers();
+    </script>
+</body>
+</html>

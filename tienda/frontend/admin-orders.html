@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Pedidos - Admin</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo"><a href="/">🛍️ Portal de Productos</a></h1>
+            <div class="nav-links">
+                <span id="userInfo" class="user-info"></span>
+                <a href="/products">📦 Productos</a>
+                <a href="/admin/users">👥 Usuarios</a>
+                <a href="/chat">💬 Chat</a>
+                <a href="#" id="logoutBtn" class="btn-danger">Cerrar Sesión</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="products-header">
+            <h2>📦 Gestión de Pedidos</h2>
+            <div class="filter-buttons">
+                <button class="btn btn-secondary" onclick="loadOrders()">Todos</button>
+                <button class="btn btn-secondary" onclick="loadOrders('pending')">Pendientes</button>
+                <button class="btn btn-secondary" onclick="loadOrders('completed')">Completados</button>
+            </div>
+        </div>
+        
+        <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
+        
+        <div id="ordersContainer" class="orders-container">
+            <p class="loading">Cargando pedidos...</p>
+        </div>
+    </main>
+
+    <script>
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+        if (!token || user.role !== 'admin') {
+            window.location.href = '/products';
+        }
+
+        document.getElementById('userInfo').textContent = `👤 ${user.username} (${user.role})`;
+
+        document.getElementById('logoutBtn').addEventListener('click', (e) => {
+            e.preventDefault();
+            localStorage.clear();
+            window.location.href = '/login';
+        });
+
+        async function graphqlRequest(query, variables = {}) {
+            const response = await fetch('/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ query, variables })
+            });
+
+            const result = await response.json();
+            if (result.errors) {
+                throw new Error(result.errors[0].message);
+            }
+            return result.data;
+        }
+
+        async function loadOrders(status = null) {
+            try {
+                const query = `
+                    query Orders($status: String) {
+                        orders(status: $status) {
+                            id
+                            total
+                            status
+                            createdAt
+                            completedAt
+                            user {
+                                username
+                                email
+                            }
+                            items {
+                                name
+                                price
+                                quantity
+                                product {
+                                    imageUrl
+                                }
+                            }
+                        }
+                    }
+                `;
+
+                const data = await graphqlRequest(query, { status });
+                displayOrders(data.orders);
+            } catch (error) {
+                showError('Error al cargar pedidos: ' + error.message);
+                document.getElementById('ordersContainer').innerHTML = '<p>Error al cargar los pedidos</p>';
+            }
+        }
+
+        function displayOrders(orders) {
+            const container = document.getElementById('ordersContainer');
+
+            if (!orders || orders.length === 0) {
+                container.innerHTML = '<p class="empty-message">No hay pedidos con este filtro</p>';
+                return;
+            }
+
+            let html = '';
+
+            orders.forEach(order => {
+                const date = new Date(parseInt(order.createdAt)).toLocaleDateString('es-ES');
+                const statusBadge = order.status === 'completed' 
+                    ? '<span class="badge badge-success">Completado</span>'
+                    : '<span class="badge badge-warning">Pendiente</span>';
+
+                html += `
+                    <div class="order-card">
+                        <div class="order-header">
+                            <div>
+                                <h3>Pedido #${order.id.slice(-8)}</h3>
+                                <p class="order-date">${date}</p>
+                                <p class="order-user">Cliente: <strong>${order.user.username}</strong> (${order.user.email})</p>
+                            </div>
+                            <div class="order-status">
+                                ${statusBadge}
+                                <p class="order-total">Total: €${order.total.toFixed(2)}</p>
+                                ${order.status === 'pending' ? `
+                                    <button class="btn btn-primary btn-sm" onclick="updateOrderStatus('${order.id}', 'completed')">
+                                        ✅ Marcar como Completado
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                        <div class="order-items">
+                            ${order.items.map(item => `
+                                <div class="order-item">
+                                    <img src="${item.product.imageUrl}" alt="${item.name}">
+                                    <div class="order-item-details">
+                                        <p class="order-item-name">${item.name}</p>
+                                        <p class="order-item-quantity">Cantidad: ${item.quantity}</p>
+                                        <p class="order-item-price">€${item.price.toFixed(2)} c/u</p>
+                                    </div>
+                                    <div class="order-item-subtotal">
+                                        €${(item.price * item.quantity).toFixed(2)}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        async function updateOrderStatus(orderId, status) {
+            if (!confirm('¿Marcar este pedido como completado?')) return;
+
+            try {
+                const mutation = `
+                    mutation UpdateOrderStatus($orderId: ID!, $status: String!) {
+                        updateOrderStatus(orderId: $orderId, status: $status) {
+                            id
+                            status
+                        }
+                    }
+                `;
+
+                await graphqlRequest(mutation, { orderId, status });
+                showSuccess('Estado del pedido actualizado');
+                loadOrders();
+            } catch (error) {
+                showError('Error al actualizar pedido: ' + error.message);
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            setTimeout(() => errorDiv.textContent = '', 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            setTimeout(() => successDiv.textContent = '', 3000);
+        }
+
+        loadOrders();
+    </script>
+</body>
+</html>

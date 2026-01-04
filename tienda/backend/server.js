@@ -7,11 +7,19 @@ const morgan = require('morgan');
 const path = require('path');
 const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
+const { ApolloServer } = require('@apollo/server');
+const { expressMiddleware } = require('@apollo/server/express4');
+const jwt = require('jsonwebtoken');
+
 const config = require('./config');
 const ChatMessage = require('./models/ChatMessage');
 const { authenticateJWT } = require('./middleware/authenticateJWT');
 
-// Rutas
+// GraphQL
+const typeDefs = require('./graphql/schema');
+const resolvers = require('./graphql/resolvers');
+
+// Rutas REST
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
 const chatRoutes = require('./routes/chatRoutes');
@@ -25,7 +33,7 @@ const io = socketIO(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// Token personalizado para morgan que muestra el usuario autenticado
+// Token personalizado para morgan
 morgan.token('user', (req) => {
   if (req.user && (req.user.username || req.user.userId)) {
     return req.user.username || req.user.userId;
@@ -46,9 +54,52 @@ mongoose.connect(config.mongoUri || process.env.MONGO_URI)
   .then(() => console.log('✅ Conectado a MongoDB'))
   .catch(err => console.error('❌ Error al conectar a MongoDB:', err));
 
-// Rutas API
+// Configurar Apollo Server
+const apolloServer = new ApolloServer({
+  typeDefs,
+  resolvers,
+});
+
+// Función asíncrona para iniciar Apollo Server
+async function startApolloServer() {
+  await apolloServer.start();
+  
+  // Middleware de contexto para GraphQL
+  app.use(
+    '/graphql',
+    cors(),
+    express.json(),
+    expressMiddleware(apolloServer, {
+      context: async ({ req }) => {
+        let token = req.headers.authorization?.split(' ')[1];
+        if (!token && req.cookies && req.cookies.token) {
+          token = req.cookies.token;
+        }
+
+        if (token) {
+          try {
+            const decoded = jwt.verify(token, config.jwtSecret);
+            return { user: decoded };
+          } catch (error) {
+            return { user: null };
+          }
+        }
+
+        return { user: null };
+      }
+    })
+  );
+
+  console.log('🚀 GraphQL disponible en http://localhost:' + (config.port || 3000) + '/graphql');
+}
+
+// Iniciar Apollo Server
+startApolloServer().catch(err => {
+  console.error('Error al iniciar Apollo Server:', err);
+});
+
+// Rutas REST API
 app.use('/api/auth', authRoutes);
-// Logger con usuario para rutas de productos (después de autenticar)
 app.use(
   '/api/products',
   authenticateJWT,
@@ -57,21 +108,35 @@ app.use(
 );
 app.use('/api/chat', chatRoutes);
 
-// Rutas HTML protegidas por JWT leído desde cookie o header
+// Rutas HTML
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend', 'login.html'));
 });
 app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend', 'register.html'));
 });
-app.get('/', authenticateJWT, morgan(':remote-addr - :user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'), (req, res) => {
+app.get('/', authenticateJWT, (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend', 'index.html'));
 });
-app.get('/products', authenticateJWT, morgan(':remote-addr - :user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'), (req, res) => {
+app.get('/products', authenticateJWT, (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend', 'products.html'));
 });
-app.get('/chat', authenticateJWT, morgan(':remote-addr - :user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'), (req, res) => {
+app.get('/chat', authenticateJWT, (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend', 'chat.html'));
+});
+
+// Nuevas rutas para Práctica 2
+app.get('/cart', authenticateJWT, (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend', 'cart.html'));
+});
+app.get('/admin/users', authenticateJWT, (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend', 'admin-users.html'));
+});
+app.get('/admin/orders', authenticateJWT, (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend', 'admin-orders.html'));
+});
+app.get('/my-orders', authenticateJWT, (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend', 'my-orders.html'));
 });
 
 // Middleware de errores
@@ -80,18 +145,19 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || "Error interno del servidor" });
 });
 
-// --- SOCKET.IO solo autenticados ---
+// Socket.IO
 const connectedUsers = new Map();
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) return next(new Error('Autenticación requerida para chat'));
   try {
-    const decoded = require('jsonwebtoken').verify(token, config.jwtSecret || process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, config.jwtSecret || process.env.JWT_SECRET);
     socket.user = decoded;
     next();
   } catch (error) {
-    next(new Error('Token inválido para socket')); }
+    next(new Error('Token inválido para socket'));
+  }
 });
 
 io.on('connection', async (socket) => {

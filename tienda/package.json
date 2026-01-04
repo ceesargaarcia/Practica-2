@@ -1,21 +1,23 @@
 {
   "name": "portal-productos",
-  "version": "1.0.0",
-  "description": "Portal de productos con autenticación y chat",
+  "version": "2.0.0",
+  "description": "E-commerce con GraphQL y gestión de pedidos",
   "main": "backend/server.js",
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js"
   },
-  "keywords": [],
+  "keywords": ["ecommerce", "graphql", "mongodb", "express"],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@apollo/server": "^4.10.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "graphql": "^16.8.1",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.0",
     "morgan": "^1.10.1",

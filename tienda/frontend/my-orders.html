@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mis Pedidos - Portal de Productos</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo"><a href="/">🛍️ Portal de Productos</a></h1>
+            <div class="nav-links">
+                <span id="userInfo" class="user-info"></span>
+                <a href="/products">📦 Productos</a>
+                <a href="/cart">🛒 Carrito</a>
+                <a href="/chat">💬 Chat</a>
+                <a href="#" id="logoutBtn" class="btn-danger">Cerrar Sesión</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <h2>📋 Mis Pedidos</h2>
+        
+        <div id="errorMessage" class="error-message"></div>
+        
+        <div id="ordersContainer" class="orders-container">
+            <p class="loading">Cargando pedidos...</p>
+        </div>
+    </main>
+
+    <script>
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+        if (!token) {
+            window.location.href = '/login';
+        }
+
+        document.getElementById('userInfo').textContent = `👤 ${user.username} (${user.role})`;
+
+        document.getElementById('logoutBtn').addEventListener('click', (e) => {
+            e.preventDefault();
+            localStorage.clear();
+            window.location.href = '/login';
+        });
+
+        async function graphqlRequest(query, variables = {}) {
+            const response = await fetch('/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ query, variables })
+            });
+
+            const result = await response.json();
+            if (result.errors) {
+                throw new Error(result.errors[0].message);
+            }
+            return result.data;
+        }
+
+        async function loadOrders() {
+            try {
+                const query = `
+                    query {
+                        myOrders {
+                            id
+                            total
+                            status
+                            createdAt
+                            completedAt
+                            items {
+                                name
+                                price
+                                quantity
+                                product {
+                                    imageUrl
+                                }
+                            }
+                        }
+                    }
+                `;
+
+                const data = await graphqlRequest(query);
+                displayOrders(data.myOrders);
+            } catch (error) {
+                showError('Error al cargar pedidos: ' + error.message);
+                document.getElementById('ordersContainer').innerHTML = '<p>Error al cargar los pedidos</p>';
+            }
+        }
+
+        function displayOrders(orders) {
+            const container = document.getElementById('ordersContainer');
+
+            if (!orders || orders.length === 0) {
+                container.innerHTML = '<p class="empty-message">No tienes pedidos todavía</p>';
+                return;
+            }
+
+            let html = '';
+
+            orders.forEach(order => {
+                const date = new Date(parseInt(order.createdAt)).toLocaleDateString('es-ES');
+                const statusBadge = order.status === 'completed' 
+                    ? '<span class="badge badge-success">Completado</span>'
+                    : '<span class="badge badge-warning">Pendiente</span>';
+
+                html += `
+                    <div class="order-card">
+                        <div class="order-header">
+                            <div>
+                                <h3>Pedido #${order.id.slice(-8)}</h3>
+                                <p class="order-date">${date}</p>
+                            </div>
+                            <div class="order-status">
+                                ${statusBadge}
+                                <p class="order-total">Total: €${order.total.toFixed(2)}</p>
+                            </div>
+                        </div>
+                        <div class="order-items">
+                            ${order.items.map(item => `
+                                <div class="order-item">
+                                    <img src="${item.product.imageUrl}" alt="${item.name}">
+                                    <div class="order-item-details">
+                                        <p class="order-item-name">${item.name}</p>
+                                        <p class="order-item-quantity">Cantidad: ${item.quantity}</p>
+                                        <p class="order-item-price">€${item.price.toFixed(2)} c/u</p>
+                                    </div>
+                                    <div class="order-item-subtotal">
+                                        €${(item.price * item.quantity).toFixed(2)}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            setTimeout(() => errorDiv.textContent = '', 5000);
+        }
+
+        loadOrders();
+    </script>
+</body>
+</html>
