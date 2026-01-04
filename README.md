@@ -1,6 +1,6 @@
-# 🏪 Portal de Productos con Autenticación y Chat
+# 🏪 E-Commerce con GraphQL - Práctica 2
 
-Guía para ejecutar el proyecto completo (backend + frontend) desde cero en una máquina nueva.
+Portal de productos evolucionado a un e-commerce completo con GraphQL, carrito de compras y gestión de pedidos.
 
 ---
 
@@ -10,69 +10,98 @@ Asegúrate de tener instalados:
 
 * **Node.js 18+** y **npm**
 * **MongoDB** (local o en la nube con MongoDB Atlas)
-* **Git** (opcional, si vas a clonar desde un repositorio)
+* **Git**
 
 Comprobación rápida:
 
 ```bash
 node -v
 npm -v
+mongod --version
 ```
 
 ---
 
 ## 📦 2) Obtener el código
 
-Clona el repositorio o copia la carpeta del proyecto:
+Clona el repositorio:
 
 ```bash
-git clone https://github.com/ceesargaarcia/Practica-1
+git clone https://github.com/ceesargaarcia/Practica-2
 cd tienda
 ```
 
 ---
 
-## 📁 3) Estructura general del proyecto
+## 📁 3) Estructura del proyecto
 
 ```
 tienda/
-│
-├── backend/              → Servidor Node.js + Express + MongoDB
-│   ├── models/           → Modelos Mongoose
-│   ├── routes/           → Rutas API (auth, products, chat)
-│   ├── middleware/       → Autenticación JWT y control de roles
-│   ├── server.js         → Punto de entrada del servidor
-│   └── .env              → Variables de entorno
-│
+├── backend/
+│   ├── models/
+│   │   ├── User.js
+│   │   ├── Product.js
+│   │   ├── ChatMessage.js
+│   │   ├── Order.js          ✨ NUEVO
+│   │   └── Cart.js           ✨ NUEVO
+│   ├── graphql/              ✨ NUEVO
+│   │   ├── schema.js
+│   │   └── resolvers.js
+│   ├── routes/
+│   │   ├── authRoutes.js
+│   │   ├── productRoutes.js
+│   │   └── chatRoutes.js
+│   ├── middleware/
+│   │   └── authenticateJWT.js
+│   ├── server.js
+│   ├── config.js
+│   └── .env
 └── frontend/
-    └── public/           → Archivos HTML, CSS y JS estáticos
+    ├── index.html
+    ├── login.html
+    ├── register.html
+    ├── products.html
+    ├── chat.html
+    ├── cart.html            ✨ NUEVO
+    ├── my-orders.html       ✨ NUEVO
+    ├── admin-users.html     ✨ NUEVO
+    ├── admin-orders.html    ✨ NUEVO
+    ├── client.js
+    └── styles.css
 ```
 
 ---
 
 ## 🧩 4) Instalación de dependencias
 
-Desde la carpeta **tienda**:
-
 ```bash
 cd backend
 npm install
 ```
 
+**Dependencias principales:**
+- `@apollo/server` - Servidor GraphQL
+- `graphql` - Librería GraphQL
+- `express` - Framework web
+- `mongoose` - ODM para MongoDB
+- `jsonwebtoken` - Autenticación JWT
+- `socket.io` - Chat en tiempo real
+- `bcryptjs` - Hash de contraseñas
+
 ---
 
 ## 🔑 5) Configurar variables de entorno
 
-Crea un archivo `.env` dentro de `tienda/backend/` con el siguiente contenido (ajústalo según tu entorno):
+Crea un archivo `.env` en `tienda/backend/`:
 
 ```env
 PORT=3000
 MONGODB_URI=mongodb://localhost:27017/tienda
-JWT_SECRET=cambia_esta_clave_por_una_segura
+JWT_SECRET=tu_clave_secreta_super_segura_cambiala
 JWT_EXPIRE=24h
 ```
 
-> 💡 Si usas **MongoDB Atlas**, reemplaza `MONGODB_URI` por la cadena de conexión que te proporciona Atlas.
+> 💡 Para **MongoDB Atlas**, usa tu cadena de conexión completa.
 
 ---
 
@@ -84,133 +113,342 @@ Desde `tienda/backend`:
 npm start
 ```
 
-Deberías ver algo como:
+Deberías ver:
 
 ```
 ✅ Conectado a MongoDB
-🚀 Servidor corriendo en http://localhost:3000
+🚀 GraphQL disponible en http://localhost:3000/graphql
+🚀 Servidor en http://localhost:3000
 ```
 
 ---
 
-## 👤 7) Crear un usuario administrador
+## 👤 7) Crear usuarios de prueba
 
-Para gestionar productos necesitas un usuario con rol `admin`.
-
-Crea uno con esta petición:
+### Crear usuario ADMINISTRADOR:
 
 ```bash
 curl -X POST http://localhost:3000/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "admin1",
-    "email": "admin1@example.com",
+    "username": "admin",
+    "email": "admin@example.com",
     "password": "Admin1234",
     "role": "admin"
   }'
 ```
 
+### Crear usuario NORMAL:
+
+```bash
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "usuario1",
+    "email": "user1@example.com",
+    "password": "User1234",
+    "role": "user"
+  }'
+```
+
 ---
 
-## 🔐 8) Iniciar sesión y obtener el token
+## 🔐 8) Iniciar sesión y obtener tokens
+
+### Login como ADMIN:
 
 ```bash
 curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin1@example.com",
+    "email": "admin@example.com",
     "password": "Admin1234"
   }'
 ```
 
-La respuesta incluirá el **token JWT** y los datos del usuario.
-Este token se guarda automáticamente en el navegador por el frontend.
+### Login como USUARIO:
+
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user1@example.com",
+    "password": "User1234"
+  }'
+```
+
+**Guarda los tokens** devueltos en `token` para usarlos en las pruebas.
 
 ---
 
 ## 🌐 9) Acceso desde el navegador
 
-Abre en tu navegador:
+Abre: `http://localhost:3000`
 
-```
-http://localhost:3000
-```
+### Rutas disponibles:
 
-Páginas disponibles:
-
-| Ruta        | Descripción                           |
-| ----------- | ------------------------------------- |
-| `/register` | Registro de usuarios                  |
-| `/login`    | Inicio de sesión                      |
-| `/products` | Gestión de productos (requiere login) |
-| `/chat`     | Chat en tiempo real (requiere login)  |
-
-El **frontend (en `/frontend/public`)** ya gestiona el token JWT usando `localStorage` y lo envía en las peticiones y al conectarse al chat.
+| Ruta | Descripción | Requiere Login | Rol |
+|------|-------------|----------------|-----|
+| `/` | Página de inicio | No | - |
+| `/register` | Registro de usuarios | No | - |
+| `/login` | Inicio de sesión | No | - |
+| `/products` | Catálogo de productos | Sí | Todos |
+| `/cart` | Carrito de compras | Sí | User |
+| `/my-orders` | Mis pedidos | Sí | User |
+| `/admin/users` | Gestión de usuarios | Sí | Admin |
+| `/admin/orders` | Gestión de pedidos | Sí | Admin |
+| `/chat` | Chat en tiempo real | Sí | Todos |
 
 ---
 
-## 🧾 10) API de productos (modo desarrollador)
+## 🔧 10) GraphQL Playground
 
-Todas las rutas requieren un token JWT.
-Reemplaza `<TOKEN>` con el token recibido al hacer login.
+Accede a: `http://localhost:3000/graphql`
 
-**Listar productos:**
+### Configurar Headers:
 
-```bash
-curl http://localhost:3000/api/products \
-  -H "Authorization: Bearer <TOKEN>"
-```
+En la sección **HTTP HEADERS** (esquina inferior derecha):
 
-**Crear producto (solo admin):**
-
-```bash
-curl -X POST http://localhost:3000/api/products \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Camisa",
-    "description": "Camisa de algodón",
-    "price": 29.99,
-    "category": "ropa",
-    "stock": 10,
-    "imageUrl": "https://via.placeholder.com/300"
-  }'
+```json
+{
+  "Authorization": "Bearer TU_TOKEN_JWT_AQUI"
+}
 ```
 
 ---
 
-## 💬 11) Chat en tiempo real
+## 📋 11) Pruebas rápidas de GraphQL
 
-* Ingresa a `/chat` desde el navegador (requiere estar logueado).
-* El cliente conecta a **Socket.IO** pasando el token JWT.
-* Se muestran:
+### ✅ Ver productos
 
-  * Nombre de usuario
-  * Mensajes en tiempo real
-  * Indicador “usuario escribiendo…”
+```graphql
+query {
+  products {
+    id
+    name
+    price
+    stock
+  }
+}
+```
 
----
+### ✅ Añadir al carrito (Usuario)
 
-## 🧰 12) Solución de problemas
+```graphql
+mutation AddToCart($productId: ID!, $quantity: Int!) {
+  addToCart(productId: $productId, quantity: $quantity) {
+    id
+    items {
+      product { name price }
+      quantity
+    }
+  }
+}
+```
 
-| Problema                                 | Solución                                                                                                       |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| ❌ No conecta a MongoDB                   | Verifica que Mongo esté corriendo (`sudo systemctl status mongod`) o revisa la cadena en `.env`.               |
-| ⚠️ `JWT_SECRET` no definido              | Asegúrate de tener `.env` creado en `backend/` y reinicia la app.                                              |
-| 🚫 401/403 al acceder a productos o chat | Confirma que el token se envía en el header `Authorization: Bearer <TOKEN>` y que el usuario esté autenticado. |
-| 🔄 Puerto en uso                         | Cambia `PORT` en `.env`.                                                                                       |
+**Variables:**
+```json
+{
+  "productId": "ID_DEL_PRODUCTO",
+  "quantity": 2
+}
+```
 
----
+### ✅ Ver mi carrito (Usuario)
 
-## 🧠 13) Scripts útiles
+```graphql
+query {
+  myCart {
+    items {
+      product { name price }
+      quantity
+    }
+  }
+}
+```
 
-Modo desarrollo con autoreload:
+### ✅ Crear pedido - Comprar (Usuario)
 
-```bash
-npm run dev
+```graphql
+mutation {
+  createOrder {
+    id
+    total
+    status
+    items {
+      name
+      price
+      quantity
+    }
+  }
+}
+```
+
+### ✅ Ver mis pedidos (Usuario)
+
+```graphql
+query {
+  myOrders {
+    id
+    total
+    status
+    createdAt
+    items {
+      name
+      quantity
+      price
+    }
+  }
+}
+```
+
+### ✅ Ver todos los pedidos (Admin)
+
+```graphql
+query {
+  orders {
+    id
+    total
+    status
+    user {
+      username
+      email
+    }
+  }
+}
+```
+
+### ✅ Ver todos los usuarios (Admin)
+
+```graphql
+query {
+  users {
+    id
+    username
+    email
+    role
+    createdAt
+  }
+}
+```
+
+### ✅ Cambiar rol de usuario (Admin)
+
+```graphql
+mutation UpdateUserRole($id: ID!, $role: String!) {
+  updateUserRole(id: $id, role: $role) {
+    id
+    username
+    role
+  }
+}
+```
+
+**Variables:**
+```json
+{
+  "id": "ID_DEL_USUARIO",
+  "role": "admin"
+}
+```
+
+### ✅ Marcar pedido como completado (Admin)
+
+```graphql
+mutation UpdateOrderStatus($orderId: ID!, $status: String!) {
+  updateOrderStatus(orderId: $orderId, status: $status) {
+    id
+    status
+    completedAt
+  }
+}
+```
+
+**Variables:**
+```json
+{
+  "orderId": "ID_DEL_PEDIDO",
+  "status": "completed"
+}
 ```
 
 ---
 
-✅ **La aplicación está lista para evaluación.**
-Sigue los pasos anteriores para configurarla desde cero y ejecutar tanto el backend como el frontend correctamente.
+## 🎯 12) Flujo completo de prueba
+
+### Como USUARIO NORMAL:
+
+1. Login → Obtener token
+2. Ver productos (`products`)
+3. Añadir productos al carrito (`addToCart`)
+4. Ver carrito (`myCart`)
+5. Crear pedido (`createOrder`)
+6. Ver mis pedidos (`myOrders`)
+
+### Como ADMINISTRADOR:
+
+1. Login → Obtener token
+2. Ver todos los usuarios (`users`)
+3. Ver todos los pedidos (`orders`)
+4. Filtrar pedidos pendientes (`orders(status: "pending")`)
+5. Marcar pedido como completado (`updateOrderStatus`)
+6. Cambiar rol de usuario (`updateUserRole`)
+
+---
+
+## 🧰 13) Solución de problemas
+
+| Problema | Solución |
+|----------|----------|
+| Error de conexión a MongoDB | Verificar que MongoDB esté corriendo |
+| Token inválido | Hacer login nuevamente y obtener token fresco |
+| "Acceso denegado" en GraphQL | Verificar que el token sea de un usuario con el rol correcto |
+| Stock insuficiente | Crear productos con más stock o reducir cantidad |
+| Carrito vacío al crear pedido | Añadir productos al carrito antes de comprar |
+
+---
+
+## 🎓 14) Características implementadas
+
+### ✅ Práctica 1 (Mantenidas):
+- Autenticación JWT
+- Roles (user/admin)
+- CRUD de productos
+- Chat en tiempo real con Socket.IO
+
+### ✅ Práctica 2 (Nuevas):
+- **GraphQL Server** con Apollo Server
+- **Carrito de compras** persistente en BD
+- **Gestión de pedidos** con estados
+- **Panel de administrador** para usuarios y pedidos
+- **Filtrado de pedidos** por estado
+- **Actualización de stock** automática al comprar
+
+---
+
+## 📊 15) Tecnologías utilizadas
+
+| Capa | Tecnología |
+|------|------------|
+| API GraphQL | Apollo Server 4 + GraphQL |
+| API REST | Express.js |
+| Base de datos | MongoDB + Mongoose |
+| Autenticación | JWT (jsonwebtoken) |
+| Tiempo real | Socket.IO |
+| Frontend | HTML5 + CSS3 + JavaScript |
+| Seguridad | bcryptjs, HttpOnly cookies |
+
+---
+
+## 📚 16) Documentación adicional
+
+- [Queries y Mutations de GraphQL](./GRAPHQL.md) - Guía completa
+- [Decisiones de diseño](./DESARROLLO.md) - Arquitectura y decisiones
+- [API REST](./API.md) - Endpoints REST disponibles
+
+---
+
+## 👨‍💻 Autor
+
+**César García**  
+Práctica 2 - E-Commerce con GraphQL  
