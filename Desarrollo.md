@@ -1,7 +1,5 @@
 # 🧩 Decisiones de Diseño - Práctica 2
 
-Documento técnico que explica las decisiones de arquitectura y diseño del proyecto.
-
 ---
 
 ## 🔐 Autenticación JWT (Stateless)
@@ -341,8 +339,3 @@ if (product.stock < quantity) {
 | Mutations carrito/pedidos | ✅ | `addToCart`, `createOrder`, etc. |
 | Auth JWT en GraphQL | ✅ Context | `expressMiddleware` context |
 | Funcionalidades previas | ✅ Mantenidas | Auth, Chat, CRUD productos |
-
----
-
-**Versión:** 2.0.0  
-**Última actualización:** Enero 2025
